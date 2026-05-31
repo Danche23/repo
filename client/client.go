@@ -22,33 +22,44 @@ func main() {
 
 	stdinReader := bufio.NewReader(os.Stdin)
 
-	// ===== [修改] 输入并验证昵称 =====
+	// ===== [修改] 循环输入并验证昵称（含服务端校验，失败可重输） =====
 	var name string
 	for {
-		fmt.Print("请输入你的网名：")
+		fmt.Print("请输入你的网名（输入 exit 退出）：")
 		n, _ := stdinReader.ReadString('\n')
 		n = strings.Trim(n, "\r\n")
 
+		// 允许在昵称输入阶段退出
+		if n == "exit" || n == "/exit" {
+			fmt.Println("客户端退出")
+			return
+		}
+
+		// 客户端本地校验格式
 		if n == "" || strings.Contains(n, " ") {
 			fmt.Println("昵称不能包含空格或是空白内容，请重新输入")
 			continue
 		}
 		name = n
-		break
-	}
 
-	// 发送昵称给服务器
-	conn.Write([]byte(name + "\n"))
+		// 发送昵称给服务器
+		conn.Write([]byte(name + "\n"))
 
-	// ===== [新增] 读取服务器对昵称的验证结果 =====
-	resp, _ := connReader.ReadString('\n')
-	resp = strings.Trim(resp, "\r\n")
+		// 读取服务器对昵称的验证结果
+		resp, _ := connReader.ReadString('\n')
+		resp = strings.Trim(resp, "\r\n")
 
-	if resp == "OK" {
-		fmt.Println("验证通过，进入聊天室...")
-	} else if strings.HasPrefix(resp, "ERR:") {
-		fmt.Println(resp[4:]) // 去掉 "ERR:" 前缀显示错误原因
-		return
+		if resp == "OK" {
+			fmt.Println("验证通过，进入聊天室...")
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
+			fmt.Println("输入消息即可发送聊天，@用户名 消息 可发送私聊")
+			fmt.Println("输入 /exit 或 exit 退出聊天室")
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
+			break
+		} else if strings.HasPrefix(resp, "ERR:") {
+			fmt.Println(resp[4:]) // 去掉 "ERR:" 前缀显示错误原因
+			continue              // 重新输入昵称
+		}
 	}
 
 	// ===== [修改] 协程接收服务器消息 =====

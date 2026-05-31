@@ -15,7 +15,7 @@ type Client struct {
 	Conn net.Conn
 }
 
-// 在线用户列表（以 conn 作为 key，防止网名一样时引发冲突）
+// 在线用户列表（以 conn 作为 key）
 var clients = make(map[net.Conn]Client)
 
 // 互斥锁（解决并发冲突）
@@ -98,27 +98,31 @@ func process(conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	// ===== [修改] 读取并验证昵称 =====
-	name, err := reader.ReadString('\n')
-	if err != nil {
-		return
-	}
-	name = strings.Trim(name, "\r\n")
+	// ===== [修改] 循环读取并验证昵称，直到合法 =====
+	var name string
+	for {
+		n, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		name = strings.Trim(n, "\r\n")
 
-	// 验证昵称格式
-	if !isValidName(name) {
-		conn.Write([]byte("ERR:昵称包含空格或是空白内容，请重新连接\n"))
-		return
-	}
+		// 验证昵称格式
+		if !isValidName(name) {
+			conn.Write([]byte("ERR:昵称包含空格或是空白内容，请重新输入\n"))
+			continue
+		}
 
-	// 检查昵称是否已存在
-	if isNameExists(name) {
-		conn.Write([]byte("ERR:昵称已被使用，请重新连接\n"))
-		return
-	}
+		// 检查昵称是否已存在
+		if isNameExists(name) {
+			conn.Write([]byte("ERR:昵称已被使用，请重新输入\n"))
+			continue
+		}
 
-	// 通知客户端昵称验证通过
-	conn.Write([]byte("OK\n"))
+		// 通知客户端昵称验证通过
+		conn.Write([]byte("OK\n"))
+		break
+	}
 
 	client := Client{
 		Name: name,
@@ -171,28 +175,44 @@ func process(conn net.Conn) {
 			return
 		}
 
-		// ===== [新增] 私聊功能：@用户名 消息 =====
+		// ===== [修改] 私聊功能：@用户名 消息 =====
 		if strings.HasPrefix(msg, "@") {
-			// 按第一个空格分割
 			spaceIdx := strings.Index(msg, " ")
-			if spaceIdx > 1 { // @ 后面至少跟一个字符
-				targetName := msg[1:spaceIdx]
-				content := strings.TrimSpace(msg[spaceIdx+1:])
-				if content != "" {
-					targetConn, ok := getClientByName(targetName)
-					if ok {
-						// 发送给目标
-						targetConn.Write([]byte(fmt.Sprintf("【私聊】%s：%s\n", name, content)))
-						// 发送给自己（提示已发出）
-						if targetConn != conn {
-							conn.Write([]byte(fmt.Sprintf("【私聊】对 %s：%s\n", targetName, content)))
-						}
-					} else {
-						conn.Write([]byte(fmt.Sprintf("【系统】用户 %s 不在线\n", targetName)))
-					}
-					continue
-				}
+
+			// 格式不对（@、@名字）
+			if spaceIdx == -1 || spaceIdx <= 1 {
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.Write([]byte("【系统】私聊格式：@用户名 消息\n"))
+				continue
 			}
+
+			targetName := msg[1:spaceIdx]
+			content := strings.TrimSpace(msg[spaceIdx+1:])
+
+			if content == "" {
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.Write([]byte(fmt.Sprintf("【系统】请输入要发送给 %s 的消息内容\n", targetName)))
+				continue
+			}
+
+			// 内容以 @ 开头，可能是用户误写了多个 @
+			if strings.HasPrefix(content, "@") {
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.Write([]byte("【系统】一次只能私聊一个人，消息内容不能以 @ 开头\n"))
+				continue
+			}
+
+			targetConn, ok := getClientByName(targetName)
+			if ok {
+				targetConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				targetConn.Write([]byte(fmt.Sprintf("【私聊】%s：%s\n", name, content)))
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.Write([]byte(fmt.Sprintf("【私聊】对 %s：%s\n", targetName, content)))
+			} else {
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.Write([]byte(fmt.Sprintf("【系统】用户 %s 不在线\n", targetName)))
+			}
+			continue
 		}
 
 		// 广播普通消息
