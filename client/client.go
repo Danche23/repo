@@ -17,39 +17,60 @@ func main() {
 	}
 	defer conn.Close()
 
-	// 创建带缓冲的连接读取器，用于处理粘包 [新增]
+	// 创建带缓冲的连接读取器，用于处理粘包
 	connReader := bufio.NewReader(conn)
 
 	stdinReader := bufio.NewReader(os.Stdin)
 
-	// ===== [修改] 循环输入并验证昵称（含服务端校验，失败可重输） =====
-	var name string
+	// ===== 登录/注册流程 [修改] =====
 	for {
-		fmt.Print("请输入你的网名（输入 exit 退出）：")
-		n, _ := stdinReader.ReadString('\n')
-		n = strings.Trim(n, "\r\n")
+		fmt.Println("=== 欢迎来到聊天室 ===")
+		fmt.Print("1. 登录  2. 注册  请选择：")
+		choice, _ := stdinReader.ReadString('\n')
+		choice = strings.Trim(choice, "\r\n")
 
-		// 允许在昵称输入阶段退出
-		if n == "exit" || n == "/exit" {
+		// 允许退出
+		if choice == "exit" || choice == "/exit" {
 			fmt.Println("客户端退出")
 			return
 		}
 
-		// 客户端本地校验格式
-		if n == "" || strings.Contains(n, " ") {
-			fmt.Println("昵称不能包含空格或是空白内容，请重新输入")
+		if choice != "1" && choice != "2" {
+			fmt.Println("❌ 请选择 1（登录）或 2（注册）")
 			continue
 		}
-		name = n
 
-		// 发送昵称给服务器
-		conn.Write([]byte(name + "\n"))
+		// 发送选择给服务器
+		conn.Write([]byte(choice + "\n"))
 
-		// 读取服务器对昵称的验证结果
+		// 输入用户名
+		fmt.Print("请输入用户名：")
+		username, _ := stdinReader.ReadString('\n')
+		username = strings.Trim(username, "\r\n")
+		conn.Write([]byte(username + "\n"))
+
+		// 输入密码
+		fmt.Print("请输入密码：")
+		password, _ := stdinReader.ReadString('\n')
+		password = strings.Trim(password, "\r\n")
+		conn.Write([]byte(password + "\n"))
+
+		// 注册需要确认密码
+		if choice == "2" {
+			fmt.Print("请再次输入密码：")
+			pwd2, _ := stdinReader.ReadString('\n')
+			pwd2 = strings.Trim(pwd2, "\r\n")
+			conn.Write([]byte(pwd2 + "\n"))
+		}
+
+		// 读取服务器验证结果
 		resp, _ := connReader.ReadString('\n')
 		resp = strings.Trim(resp, "\r\n")
 
 		if resp == "OK" {
+			if choice == "2" {
+				fmt.Println("✅ 注册成功！")
+			}
 			fmt.Println("验证通过，进入聊天室...")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
 			fmt.Println("输入消息即可发送聊天，@用户名 消息 可发送私聊")
@@ -57,13 +78,13 @@ func main() {
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
 			break
 		} else if strings.HasPrefix(resp, "ERR:") {
-			fmt.Println(resp[4:]) // 去掉 "ERR:" 前缀显示错误原因
-			continue              // 重新输入昵称
+			fmt.Println("❌ " + resp[4:]) // 去掉 "ERR:" 前缀，显示错误原因
+			return
 		}
 	}
 
-	// ===== [修改] 协程接收服务器消息 =====
-	// 使用 ReadString 逐行读取，不会出现粘包问题 [新增]
+	// =====  协程接收服务器消息 =====
+	// 使用 ReadString 逐行读取，不会出现粘包问题
 	go func() {
 		for {
 			msg, err := connReader.ReadString('\n')
@@ -74,13 +95,13 @@ func main() {
 
 			msg = strings.Trim(msg, "\r\n")
 
-			// ===== [新增] 响应心跳检测 =====
+			// =====  响应心跳检测 =====
 			if msg == "PING" {
 				conn.Write([]byte("PONG\n"))
 				continue
 			}
 
-			// ===== [新增] 收到退出确认 =====
+			// =====  收到退出确认 =====
 			if msg == "BYE" {
 				continue
 			}
@@ -99,7 +120,7 @@ func main() {
 
 		line = strings.Trim(line, "\r\n")
 
-		// ===== [修改] 退出命令 =====
+		// =====  退出命令 =====
 		if line == "exit" || line == "/exit" {
 			// 通知服务器
 			conn.Write([]byte("exit\n"))
@@ -107,7 +128,7 @@ func main() {
 			return
 		}
 
-		// ===== [修改] 私聊命令也发送（@用户名 消息） =====
+		// =====  私聊命令也发送（@用户名 消息） =====
 		_, err = conn.Write([]byte(line + "\n"))
 		if err != nil {
 			fmt.Println("conn write err:", err)

@@ -21,10 +21,10 @@ var clients = make(map[net.Conn]Client)
 // 互斥锁（解决并发冲突）
 var lock sync.Mutex
 
-// 带缓冲的消息通道，避免广播阻塞 [修改]
+// 带缓冲的消息通道，避免广播阻塞
 var message = make(chan string, 100)
 
-// ===== [新增] 广播消息 =====
+// =====  广播消息 =====
 func broadcast() {
 	for {
 		msg := <-message
@@ -34,7 +34,7 @@ func broadcast() {
 
 		lock.Lock()
 		for _, cli := range clients {
-			// 设置写超时，防止慢客户端阻塞所有人 [新增]
+			// 设置写超时，防止慢客户端阻塞所有人
 			cli.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_, err := cli.Conn.Write([]byte(msg))
 			if err != nil {
@@ -45,30 +45,7 @@ func broadcast() {
 	}
 }
 
-// ===== [新增] 昵称验证 =====
-func isValidName(name string) bool {
-	if strings.TrimSpace(name) == "" {
-		return false
-	}
-	if strings.Contains(name, " ") {
-		return false
-	}
-	return true
-}
-
-// ===== [新增] 检查昵称是否已存在 =====
-func isNameExists(name string) bool {
-	lock.Lock()
-	defer lock.Unlock()
-	for _, cli := range clients {
-		if cli.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-// ===== [新增] 按昵称查找用户 =====
+// =====  按昵称查找用户 =====
 func getClientByName(name string) (net.Conn, bool) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -80,7 +57,7 @@ func getClientByName(name string) (net.Conn, bool) {
 	return nil, false
 }
 
-// ===== [新增] 心跳检测协程 =====
+// =====  心跳检测协程 =====
 func heartbeat() {
 	ticker := time.NewTicker(30 * time.Second)
 	for range ticker.C {
@@ -98,30 +75,63 @@ func process(conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	// ===== [修改] 循环读取并验证昵称，直到合法 =====
+	// =====  登录/注册流程 [修改] =====
 	var name string
-	for {
-		n, err := reader.ReadString('\n')
+
+	// 读取选择：1=登录  2=注册
+	choice, err := reader.ReadString('\n')
+	if err != nil {
+		return
+	}
+	choice = strings.Trim(choice, "\r\n")
+
+	// 读取用户名
+	username, err := reader.ReadString('\n')
+	if err != nil {
+		return
+	}
+	username = strings.Trim(username, "\r\n")
+
+	// 读取密码
+	password, err := reader.ReadString('\n')
+	if err != nil {
+		return
+	}
+	password = strings.Trim(password, "\r\n")
+
+	switch choice {
+	case "1": // 登录 [修改]
+		user, err := Login(username, password)
+		if err != nil {
+			conn.Write([]byte("ERR:" + err.Error() + "\n"))
+			return
+		}
+		conn.Write([]byte("OK\n"))
+		name = user.Nickname
+
+	case "2": // 注册 [新增]
+		// 读取确认密码
+		pwd2, err := reader.ReadString('\n')
 		if err != nil {
 			return
 		}
-		name = strings.Trim(n, "\r\n")
-
-		// 验证昵称格式
-		if !isValidName(name) {
-			conn.Write([]byte("ERR:昵称包含空格或是空白内容，请重新输入\n"))
-			continue
+		pwd2 = strings.Trim(pwd2, "\r\n")
+		if password != pwd2 {
+			conn.Write([]byte("ERR:两次密码输入不一致\n"))
+			return
 		}
-
-		// 检查昵称是否已存在
-		if isNameExists(name) {
-			conn.Write([]byte("ERR:昵称已被使用，请重新输入\n"))
-			continue
+		// 注册 [新增]
+		err = Register(username, password)
+		if err != nil {
+			conn.Write([]byte("ERR:" + err.Error() + "\n"))
+			return
 		}
-
-		// 通知客户端昵称验证通过
 		conn.Write([]byte("OK\n"))
-		break
+		name = username
+
+	default:
+		conn.Write([]byte("ERR:无效选择，请选择 1(登录) 或 2(注册)\n"))
+		return
 	}
 
 	client := Client{
@@ -137,7 +147,7 @@ func process(conn net.Conn) {
 	// 广播加入消息
 	message <- fmt.Sprintf("【系统】%s 加入了聊天室（当前在线：%d人）\n", name, count)
 
-	// ===== [修改] 循环接收消息，加入心跳超时机制 =====
+	// =====  循环接收消息，加入心跳超时机制 =====
 	for {
 		// 设置读取超时：60 秒内没有收到任何数据（含 PONG）则认为客户端已断开 [新增]
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -156,12 +166,12 @@ func process(conn net.Conn) {
 
 		msg = strings.Trim(msg, "\r\n")
 
-		// ===== [新增] 心跳响应，忽略 PONG =====
+		// =====  心跳响应，忽略 PONG =====
 		if msg == "PONG" {
 			continue
 		}
 
-		// ===== [新增] 处理退出命令 =====
+		// =====  处理退出命令 =====
 		if msg == "exit" || msg == "/exit" {
 			// 通知对方退出成功
 			conn.Write([]byte("BYE\n"))
@@ -175,7 +185,7 @@ func process(conn net.Conn) {
 			return
 		}
 
-		// ===== [修改] 私聊功能：@用户名 消息 =====
+		// ===== 私聊功能：@用户名 消息 =====
 		if strings.HasPrefix(msg, "@") {
 			spaceIdx := strings.Index(msg, " ")
 
@@ -234,10 +244,17 @@ func main() {
 
 	fmt.Println("聊天室服务器启动成功...")
 
+	// =====  初始化数据库连接 [新增] =====
+	err = InitDB()
+	if err != nil {
+		fmt.Println("数据库初始化失败:", err)
+		return
+	}
+
 	// 开启广播协程
 	go broadcast()
 
-	// ===== [新增] 开启心跳检测协程 =====
+	// =====  开启心跳检测协程 =====
 	go heartbeat()
 
 	// ===== 循环等待连接 =====
