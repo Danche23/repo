@@ -1,10 +1,9 @@
 package main
 
-// =====  数据库连接 [新增文件] =====
-
 import (
 	"database/sql"
 	"fmt"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -12,7 +11,6 @@ import (
 var DB *sql.DB
 
 // InitDB 初始化数据库连接
-// 如果密码不是 123456，在这里改
 func InitDB() error {
 	dsn := "root:123456@tcp(127.0.0.1:3306)/chat_project?charset=utf8mb4&parseTime=true"
 
