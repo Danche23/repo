@@ -22,7 +22,7 @@ func main() {
 
 	stdinReader := bufio.NewReader(os.Stdin)
 
-	// ===== 登录/注册流程 [修改] =====
+	// ===== 登录/注册流程 =====
 	for {
 		fmt.Println("=== 欢迎来到聊天室 ===")
 		fmt.Print("1. 登录  2. 注册  请选择：")
@@ -95,18 +95,13 @@ func main() {
 
 			msg = strings.Trim(msg, "\r\n")
 
-			// =====  响应心跳检测 =====
-			if msg == "PING" {
-				conn.Write([]byte("PONG\n"))
-				continue
-			}
+		// =====  响应心跳检测 =====
+		if msg == "PING" {
+			conn.Write([]byte("PONG\n"))
+			continue
+		}
 
-			// =====  收到退出确认 =====
-			if msg == "BYE" {
-				continue
-			}
-
-			fmt.Print(msg + "\n")
+		fmt.Print(msg + "\n")
 		}
 	}()
 

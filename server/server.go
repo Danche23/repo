@@ -38,11 +38,21 @@ func broadcast() {
 			cli.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_, err := cli.Conn.Write([]byte(msg))
 			if err != nil {
-				// 写失败不处理，由 process() 的心跳检测来清理 [修改]
+				// 写失败不处理，由 process() 的心跳检测来清理
 			}
 		}
 		lock.Unlock()
 	}
+}
+
+// =====  清理客户端并广播离开消息 =====
+func leave(conn net.Conn, name string) {
+	lock.Lock()
+	delete(clients, conn)
+	count := len(clients)
+	lock.Unlock()
+
+	message <- fmt.Sprintf("【系统】%s 离开了聊天室（当前在线：%d人）\n", name, count)
 }
 
 // =====  按昵称查找用户 =====
@@ -75,7 +85,7 @@ func process(conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	// =====  登录/注册流程 [修改] =====
+	// =====  登录/注册流程 =====
 	var name string
 
 	// 读取选择：1=登录  2=注册
@@ -100,7 +110,7 @@ func process(conn net.Conn) {
 	password = strings.Trim(password, "\r\n")
 
 	switch choice {
-	case "1": // 登录 [修改]
+	case "1": // 登录
 		user, err := Login(username, password)
 		if err != nil {
 			conn.Write([]byte("ERR:" + err.Error() + "\n"))
@@ -109,7 +119,7 @@ func process(conn net.Conn) {
 		conn.Write([]byte("OK\n"))
 		name = user.Nickname
 
-	case "2": // 注册 [新增]
+	case "2": // 注册
 		// 读取确认密码
 		pwd2, err := reader.ReadString('\n')
 		if err != nil {
@@ -120,7 +130,7 @@ func process(conn net.Conn) {
 			conn.Write([]byte("ERR:两次密码输入不一致\n"))
 			return
 		}
-		// 注册 [新增]
+		// 注册
 		err = Register(username, password)
 		if err != nil {
 			conn.Write([]byte("ERR:" + err.Error() + "\n"))
@@ -149,18 +159,13 @@ func process(conn net.Conn) {
 
 	// =====  循环接收消息，加入心跳超时机制 =====
 	for {
-		// 设置读取超时：60 秒内没有收到任何数据（含 PONG）则认为客户端已断开 [新增]
+		// 设置读取超时：60 秒内没有收到任何数据（含 PONG）则认为客户端已断开
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		msg, err := reader.ReadString('\n')
 		if err != nil {
-			// 读取失败（断开或超时），清理客户端 [修改]
-			lock.Lock()
-			delete(clients, conn)
-			count = len(clients)
-			lock.Unlock()
-
-			message <- fmt.Sprintf("【系统】%s 离开了聊天室（当前在线：%d人）\n", name, count)
+			// 读取失败（断开或超时），清理客户端
+			leave(conn, name)
 			return
 		}
 
@@ -173,15 +178,7 @@ func process(conn net.Conn) {
 
 		// =====  处理退出命令 =====
 		if msg == "exit" || msg == "/exit" {
-			// 通知对方退出成功
-			conn.Write([]byte("BYE\n"))
-
-			lock.Lock()
-			delete(clients, conn)
-			count = len(clients)
-			lock.Unlock()
-
-			message <- fmt.Sprintf("【系统】%s 离开了聊天室（当前在线：%d人）\n", name, count)
+			leave(conn, name)
 			return
 		}
 
