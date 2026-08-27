@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
     `id`         BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
     `username`   VARCHAR(64)  NOT NULL COMMENT '登录用户名',
     `password`   VARCHAR(255) NOT NULL COMMENT 'bcrypt加密后的密码',
-    `nickname`   VARCHAR(64)  NOT NULL COMMENT '显示昵称（聊天室显示用）',
     `email`      VARCHAR(128) DEFAULT '' COMMENT '邮箱',
     `avatar`     VARCHAR(255) DEFAULT '' COMMENT '头像URL',
     `status`     TINYINT      DEFAULT 1 COMMENT '状态：1=启用 0=禁用',

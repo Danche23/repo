@@ -13,7 +13,6 @@ import (
 type User struct {
 	ID       int64
 	Username string
-	Nickname string
 	Status   int
 }
 
@@ -36,10 +35,10 @@ func Register(username, password string) error {
 		return err
 	}
 
-	// 3. 插入数据库（昵称先用用户名，后续可以改）
+	// 3. 插入数据库
 	_, err = DB.Exec(
-		"INSERT INTO sys_user (username, password, nickname, status) VALUES (?, ?, ?, 1)",
-		username, string(hashed), username,
+		"INSERT INTO sys_user (username, password, status) VALUES (?, ?, 1)",
+		username, string(hashed),
 	)
 	return err
 }
@@ -51,13 +50,13 @@ func Login(username, password string) (*User, error) {
 
 	// 1. 按用户名查数据库（包含 password 字段用于 bcrypt 比对）
 	row := DB.QueryRow(
-		"SELECT id, username, nickname, status, password FROM sys_user WHERE username = ?",
+		"SELECT id, username, status, password FROM sys_user WHERE username = ?",
 		username,
 	)
 
 	// 用来比对密码的哈希值（不返回给调用者）
 	var hashedPassword string
-	err := row.Scan(&user.ID, &user.Username, &user.Nickname, &user.Status, &hashedPassword)
+	err := row.Scan(&user.ID, &user.Username, &user.Status, &hashedPassword)
 
 	// 没查到
 	if err == sql.ErrNoRows {
@@ -78,5 +77,6 @@ func Login(username, password string) (*User, error) {
 		return nil, errors.New("用户名或密码错误")
 	}
 
+	CacheUser(user)
 	return user, nil
 }
