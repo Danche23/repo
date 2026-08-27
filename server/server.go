@@ -87,6 +87,16 @@ func heartbeat() {
 	}
 }
 
+// helpText 是 /help 命令的输出：提示类语言统一收在这里，列出所有命令及用法
+const helpText = `━━━ 聊天室命令 ━━━
+/help            查看所有命令及用法
+/排行榜 [数量]    查看活跃用户排行（数量默认10，范围1-100）
+/排名            查看我的排名与消息数
+/exit            退出聊天室
+@用户名 消息      发送私聊，例：@小明 你好
+直接输入文字      发送公共聊天
+━━━━━━━━━━━━━━━━━━`
+
 // 处理用户连接
 func process(conn net.Conn) {
 	defer conn.Close()
@@ -188,10 +198,17 @@ func process(conn net.Conn) {
 			continue
 		}
 
-		// =====  处理退出命令 =====
-		if msg == "exit" || msg == "/exit" {
+		// =====  处理退出命令（统一以 / 开头） =====
+		if msg == "/exit" {
 			leave(conn, name)
 			return
+		}
+
+		// =====  查看帮助 =====
+		if msg == "/help" {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			conn.Write([]byte(helpText + "\n"))
+			continue
 		}
 
 		parts := strings.Fields(msg)
@@ -207,7 +224,7 @@ func process(conn net.Conn) {
 
 				if err != nil || num <= 0 || num > 100 {
 					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-					conn.Write([]byte("【系统】排行榜数量范围1-100\n"))
+					conn.Write([]byte("【系统】数量无效，输入 /help 查看用法\n"))
 					continue
 				}
 
@@ -251,7 +268,7 @@ func process(conn net.Conn) {
 			// 格式不对（@、@名字）
 			if spaceIdx == -1 || spaceIdx <= 1 {
 				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				conn.Write([]byte("【系统】私聊格式：@用户名 消息\n"))
+				conn.Write([]byte("【系统】私聊格式错误，输入 /help 查看用法\n"))
 				continue
 			}
 
@@ -260,14 +277,14 @@ func process(conn net.Conn) {
 
 			if content == "" {
 				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				conn.Write([]byte(fmt.Sprintf("【系统】请输入要发送给 %s 的消息内容\n", targetName)))
+				conn.Write([]byte("【系统】私聊内容不能为空，输入 /help 查看用法\n"))
 				continue
 			}
 
 			// 内容以 @ 开头，可能是用户误写了多个 @
 			if strings.HasPrefix(content, "@") {
 				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				conn.Write([]byte("【系统】一次只能私聊一个人，消息内容不能以 @ 开头\n"))
+				conn.Write([]byte("【系统】消息内容不能以 @ 开头，输入 /help 查看用法\n"))
 				continue
 			}
 
@@ -280,7 +297,7 @@ func process(conn net.Conn) {
 			continue
 		}
 
-		if msg == "我的排名" {
+		if msg == "/排名" {
 			rank, score, err := GetUserRank(name)
 			if err != nil {
 				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -289,6 +306,13 @@ func process(conn net.Conn) {
 			}
 			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			conn.Write([]byte(fmt.Sprintf("【排名】你是第%d名（%d条消息）\n", rank, int64(score))))
+			continue
+		}
+
+		// =====  未知命令：以 / 开头但未匹配任何命令，提示而不是当广播发出去 =====
+		if strings.HasPrefix(msg, "/") {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			conn.Write([]byte("【系统】未知命令，输入 /help 查看用法\n"))
 			continue
 		}
 

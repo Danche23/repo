@@ -73,8 +73,7 @@ func main() {
 			}
 			fmt.Println("验证通过，进入聊天室...")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("输入消息即可发送聊天，@用户名 消息 可发送私聊")
-			fmt.Println("输入 /exit 或 exit 退出聊天室")
+			fmt.Println("直接输入文字即可聊天，输入 /help 查看所有命令")
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
 			break
 		} else if strings.HasPrefix(resp, "ERR:") {
@@ -115,10 +114,10 @@ func main() {
 
 		line = strings.Trim(line, "\r\n")
 
-		// =====  退出命令 =====
-		if line == "exit" || line == "/exit" {
+		// =====  退出命令（统一以 / 开头） =====
+		if line == "/exit" {
 			// 通知服务器
-			conn.Write([]byte("exit\n"))
+			conn.Write([]byte("/exit\n"))
 			fmt.Println("客户端退出")
 			return
 		}

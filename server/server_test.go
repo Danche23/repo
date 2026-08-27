@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -119,5 +120,32 @@ func TestBroadcastDoesNotHoldLockDuringWrite(t *testing.T) {
 		// 锁空闲 —— 写操作没有持有锁，修复生效
 	case <-time.After(1 * time.Second):
 		t.Fatal("broadcast 在写慢客户端时仍持有全局锁，慢客户端会阻塞整个服务器")
+	}
+}
+
+// TestHelpText 验证 /help 的输出覆盖所有命令，且每条命令都带用法说明。
+func TestHelpText(t *testing.T) {
+	cmds := []string{
+		"/help",
+		"/排行榜 [数量]",
+		"/排名",
+		"/exit",
+		"@用户名 消息",
+		"直接输入文字",
+	}
+	for _, cmd := range cmds {
+		if !strings.Contains(helpText, cmd) {
+			t.Errorf("helpText 缺少命令 %q", cmd)
+		}
+	}
+
+	// 命令行的说明列非空：每行命令后面应有空格分隔的说明文字
+	for _, line := range strings.Split(helpText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "@") {
+			if !strings.Contains(trimmed, " ") {
+				t.Errorf("命令缺少说明: %q", trimmed)
+			}
+		}
 	}
 }
